@@ -36,11 +36,13 @@ def load_processed_vods():
             processed = [row for row in reader]
     return {row[0] for row in processed}, processed
 
+
 def save_processed_vod(vod_id):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PROCESSED_FILE, "a") as file:
         writer = csv.writer(file)
         writer.writerow([vod_id, timestamp])
+
 
 def sort_processed_vods():
     if os.path.exists(PROCESSED_FILE):
@@ -51,6 +53,7 @@ def sort_processed_vods():
             writer = csv.writer(file)
             writer.writerows(sorted_vods)
 
+
 def fetch_latest_vods():
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"}
@@ -59,22 +62,38 @@ def fetch_latest_vods():
     videos = response.json()["data"]
     return [(video["id"], video["url"], video["title"]) for video in videos]
 
+
 def download_vod(vod_url, vod_id):
     output_path = os.path.join(DOWNLOAD_DIR, f"{vod_id}.mp4")
     subprocess.run(["streamlink", vod_url, "best", "-o", output_path])
     return output_path
 
+
 def split_vod(vod_path):
     segments = []
+    total_duration = get_video_duration(vod_path)
+    
+    # Determine the number of 30-minute segments
+    target_segment_duration = 1800  # 30 minutes in seconds
+    num_segments = round(total_duration / target_segment_duration)
+    
+    # Ensure a reasonable segment length based on the total duration
+    segment_duration = total_duration / max(1, num_segments)
+
     output_template = os.path.join(SEGMENTS_DIR, "segment_%03d.mp4")
     subprocess.run([
         "ffmpeg", "-i", vod_path, "-c", "copy", "-map", "0",
-        "-segment_time", "1800", "-f", "segment", output_template
+        "-segment_time", str(segment_duration), "-f", "segment", output_template
     ])
     for file in os.listdir(SEGMENTS_DIR):
         if file.startswith("segment_") and file.endswith(".mp4"):
             segments.append(os.path.join(SEGMENTS_DIR, file))
+    
     return segments
+
+def get_video_duration(video_path):
+    result = subprocess.run(["ffprobe", "-i", video_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"], capture_output=True, text=True)
+    return float(result.stdout.strip())
 
 def upload_to_youtube(video_file, title, description):
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -101,6 +120,7 @@ def upload_to_youtube(video_file, title, description):
     except HttpError as e:
         print(f"An error occurred: {e}")
 
+
 def main():
     print("Checking for new Twitch VODs...")
     latest_vods = fetch_latest_vods()
@@ -114,7 +134,7 @@ def main():
         print(f"Downloading VOD: {vod_title}")
         vod_path = download_vod(vod_url, vod_id)
 
-        print("Splitting VOD into 30-minute segments...")
+        print("Splitting VOD into consistent-length segments...")
         segments = split_vod(vod_path)
 
         print("Uploading segments to YouTube...")
@@ -127,6 +147,7 @@ def main():
         print(f"VOD {vod_id} processed successfully!")
     
     sort_processed_vods()
+
 
 if __name__ == "__main__":
     try:
