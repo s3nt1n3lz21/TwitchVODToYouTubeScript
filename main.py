@@ -29,29 +29,35 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(SEGMENTS_DIR, exist_ok=True)
 
 def load_processed_vods():
-    processed = set()
+    processed = []
     if os.path.exists(PROCESSED_FILE):
         with open(PROCESSED_FILE, "r") as file:
             reader = csv.reader(file)
-            for row in reader:
-                processed.add(row[0])
-    return processed
+            processed = [row for row in reader]
+    return {row[0] for row in processed}, processed
 
 def save_processed_vod(vod_id):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PROCESSED_FILE, "a") as file:
         writer = csv.writer(file)
-        writer.writerow([vod_id])
+        writer.writerow([vod_id, timestamp])
 
-def fetch_latest_vod():
-    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=1"
+def sort_processed_vods():
+    if os.path.exists(PROCESSED_FILE):
+        with open(PROCESSED_FILE, "r") as file:
+            reader = csv.reader(file)
+            sorted_vods = sorted(reader, key=lambda row: row[1], reverse=True)
+        with open(PROCESSED_FILE, "w") as file:
+            writer = csv.writer(file)
+            writer.writerows(sorted_vods)
+
+def fetch_latest_vods():
+    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"}
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     videos = response.json()["data"]
-    if videos:
-        latest_vod = videos[0]
-        return latest_vod["id"], latest_vod["url"], latest_vod["title"]
-    return None, None, None
+    return [(video["id"], video["url"], video["title"]) for video in videos]
 
 def download_vod(vod_url, vod_id):
     output_path = os.path.join(DOWNLOAD_DIR, f"{vod_id}.mp4")
@@ -97,30 +103,30 @@ def upload_to_youtube(video_file, title, description):
 
 def main():
     print("Checking for new Twitch VODs...")
-    vod_id, vod_url, vod_title = fetch_latest_vod()
-    if not vod_id:
-        print("No new VODs found.")
-        return
+    latest_vods = fetch_latest_vods()
+    processed_vod_ids, _ = load_processed_vods()
 
-    processed_vods = load_processed_vods()
-    if vod_id in processed_vods:
-        print(f"VOD {vod_id} already processed.")
-        return
+    for vod_id, vod_url, vod_title in latest_vods:
+        if vod_id in processed_vod_ids:
+            print(f"VOD {vod_id} already processed.")
+            continue
 
-    print(f"Downloading VOD: {vod_title}")
-    vod_path = download_vod(vod_url, vod_id)
+        print(f"Downloading VOD: {vod_title}")
+        vod_path = download_vod(vod_url, vod_id)
 
-    print("Splitting VOD into 30-minute segments...")
-    segments = split_vod(vod_path)
+        print("Splitting VOD into 30-minute segments...")
+        segments = split_vod(vod_path)
 
-    print("Uploading segments to YouTube...")
-    for i, segment in enumerate(segments):
-        segment_title = f"{vod_title} - Part {i+1}"
-        description = f"Segment {i+1} of Twitch VOD: {vod_title}. Exported automatically."
-        upload_to_youtube(segment, segment_title, description)
+        print("Uploading segments to YouTube...")
+        for i, segment in enumerate(segments):
+            segment_title = f"{vod_title} - Part {i+1}"
+            description = f"Segment {i+1} of Twitch VOD: {vod_title}. Exported automatically."
+            upload_to_youtube(segment, segment_title, description)
 
-    save_processed_vod(vod_id)
-    print("All segments uploaded successfully!")
+        save_processed_vod(vod_id)
+        print(f"VOD {vod_id} processed successfully!")
+    
+    sort_processed_vods()
 
 if __name__ == "__main__":
     try:
