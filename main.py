@@ -139,8 +139,24 @@ def get_video_duration(video_path):
     return float(result.stdout.strip())
 
 def authenticate_youtube():
-    flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_API_SCOPES)
-    credentials = flow.run_local_server(port=8080, prompt="consent")
+    credentials = None
+
+    # Load existing credentials if available
+    if os.path.exists(TOKEN_FILE):
+        credentials = Credentials.from_authorized_user_file(TOKEN_FILE)
+
+    # If credentials are invalid or missing, perform authentication
+    if not credentials or not credentials.valid:
+        if credentials and credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())  # Refresh token if expired
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_API_SCOPES)
+            credentials = flow.run_local_server(port=8080, prompt="consent")
+
+            # Save credentials for future use
+            with open(TOKEN_FILE, "w") as token:
+                token.write(credentials.to_json())
+
     youtube = build("youtube", "v3", credentials=credentials)
 
     # Verify authenticated channel
@@ -152,10 +168,7 @@ def authenticate_youtube():
     return youtube
 
 def get_authenticated_channel_id(youtube):
-    request = youtube.channels().list(
-        part="id",
-        mine=True
-    )
+    request = youtube.channels().list(part="id", mine=True)
     response = request.execute()
     return response["items"][0]["id"] if "items" in response else None
 
