@@ -59,7 +59,7 @@ def sort_processed_vods():
             writer.writerows(sorted_vods)
 
 def fetch_vod_details():
-    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
+    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=100"
     headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"}
     response = requests.get(url, headers=headers)
     response.raise_for_status()
