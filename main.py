@@ -34,15 +34,22 @@ def load_processed_vods():
         with open(PROCESSED_FILE, "r") as file:
             reader = csv.reader(file)
             processed = [row for row in reader]
-    return {row[0] for row in processed}, processed
+    return {row[0]: int(row[1]) for row in processed}, processed  # Return a dictionary with VOD ID as the key and part number as value
 
-
-def save_processed_vod(vod_id):
+def save_processed_vod(vod_id, part_number):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PROCESSED_FILE, "a") as file:
         writer = csv.writer(file)
-        writer.writerow([vod_id, timestamp])
+        writer.writerow([vod_id, part_number, timestamp])
 
+def get_last_part_number_for_game(vod_title, processed_vods):
+    game_name = vod_title.split(" |")[0]  # Extract the game name before the pipe
+    game_vods = [vod for vod in processed_vods if vod[0].split(" |")[0] == game_name]  # Find processed VODs for the same game
+    if game_vods:
+        # Extract and return the highest part number used
+        part_numbers = [vod[1] for vod in game_vods]  # Use the part number from the processed list
+        return max(part_numbers, default=0)
+    return 0  # No parts processed for this game
 
 def sort_processed_vods():
     if os.path.exists(PROCESSED_FILE):
@@ -121,7 +128,7 @@ def upload_to_youtube(video_file, title, description):
 def main():
     print("Checking for new Twitch VODs...")
     latest_vods = fetch_vod_details()
-    processed_vod_ids, _ = load_processed_vods()
+    processed_vod_ids, processed_vods = load_processed_vods()
 
     for vod_id, vod_url, vod_title, vod_category in latest_vods:
         if vod_id in processed_vod_ids:
@@ -131,20 +138,26 @@ def main():
         print(f"Downloading VOD: {vod_title} (Category: {vod_category})")
         vod_path = download_vod(vod_url, vod_id)
 
+        last_part_number = get_last_part_number_for_game(vod_title, processed_vods)
+
         if vod_category.lower() == "just chatting":
             print("Uploading full VOD (Just Chatting category)...")
             upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
+            save_processed_vod(vod_id, last_part_number)  # Full VOD doesn't split into parts, so just save the last part number
         else:
             print("Splitting VOD into consistent-length segments...")
             segments = split_vod(vod_path)
             for i, segment in enumerate(segments):
-                segment_title = f"{vod_title} - Part {i+1}"
-                description = f"Segment {i+1} of Twitch VOD: {vod_title}. Exported automatically."
+                part_number = last_part_number + i + 1  # Continue from last part number
+                segment_title = f"{vod_title} - Part {part_number}"
+                description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
                 upload_to_youtube(segment, segment_title, description)
 
-        save_processed_vod(vod_id)
+            # Save the last part number used after uploading segments
+            save_processed_vod(vod_id, last_part_number + len(segments))
+
         print(f"VOD {vod_id} processed successfully!")
-    
+
     sort_processed_vods()
 
 if __name__ == "__main__":
