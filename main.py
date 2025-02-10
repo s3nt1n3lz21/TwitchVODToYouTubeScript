@@ -140,15 +140,21 @@ def main():
 
         last_part_number = get_last_part_number_for_game(vod_title, processed_vods)
 
-        if vod_category.lower() == "just chatting":
-            print("Uploading full VOD (Just Chatting category)...")
+        # Check if the VOD is a cooking video
+        if vod_title.lower().startswith("cooking |"):
+            vod_category = "just chatting"  # Treat as Just Chatting category for part number logic
+
+        if vod_category.lower() == "just chatting" or vod_category.lower() == "cooking":
+            # Increment the part number for "just chatting" or "cooking" videos
+            print(f"Uploading VOD (Category: {vod_category}) with Part Number {last_part_number + 1}")
             upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
-            save_processed_vod(vod_id, last_part_number)  # Full VOD doesn't split into parts, so just save the last part number
+            # Save the incremented part number after uploading
+            save_processed_vod(vod_id, last_part_number + 1)
         else:
             print("Splitting VOD into consistent-length segments...")
             segments = split_vod(vod_path)
             for i, segment in enumerate(segments):
-                part_number = last_part_number + i + 1  # Continue from last part number
+                part_number = last_part_number + i + 1  # Increment the part number for each segment
                 segment_title = f"{vod_title} - Part {part_number}"
                 description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
                 upload_to_youtube(segment, segment_title, description)
