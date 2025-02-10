@@ -15,7 +15,12 @@ load_dotenv()
 # Twitch API Config
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
+TWITCH_REFRESH_TOKEN = os.getenv("TWITCH_REFRESH_TOKEN")
 TWITCH_USER_ID = os.getenv("TWITCH_USER_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
+
+# Token refresh URL
+TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 
 # YouTube API Config
 YOUTUBE_API_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
@@ -58,10 +63,43 @@ def sort_processed_vods():
             writer = csv.writer(file)
             writer.writerows(sorted_vods)
 
+def refresh_access_token():
+    global TWITCH_ACCESS_TOKEN
+    print("Refreshing Twitch access token...")
+    response = requests.post(TOKEN_URL, data={
+        "client_id": TWITCH_CLIENT_ID,
+        "client_secret": TWITCH_CLIENT_SECRET,
+        "grant_type": "refresh_token",
+        "refresh_token": TWITCH_REFRESH_TOKEN
+    })
+    if response.status_code == 200:
+        new_tokens = response.json()
+        TWITCH_ACCESS_TOKEN = new_tokens["access_token"]
+        with open(".env", "r") as file:
+            lines = file.readlines()
+        with open(".env", "w") as file:
+            for line in lines:
+                if line.startswith("TWITCH_ACCESS_TOKEN"):
+                    file.write(f"TWITCH_ACCESS_TOKEN={TWITCH_ACCESS_TOKEN}\n")
+                else:
+                    file.write(line)
+        print("Twitch access token refreshed.")
+    else:
+        print("Failed to refresh access token:", response.text)
+
 def fetch_vod_details():
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=100"
-    headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"}
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+    }
     response = requests.get(url, headers=headers)
+    
+    if response.status_code == 401:  # Unauthorized, refresh token
+        refresh_access_token()
+        headers["Authorization"] = f"Bearer {TWITCH_ACCESS_TOKEN}"
+        response = requests.get(url, headers=headers)
+
     response.raise_for_status()
     videos = response.json()["data"]
     return [(video["id"], video["url"], video["title"], video["game_name"]) for video in videos]
