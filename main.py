@@ -34,22 +34,20 @@ def load_processed_vods():
         with open(PROCESSED_FILE, "r") as file:
             reader = csv.reader(file)
             processed = [row for row in reader]
-    return {row[0]: int(row[1]) for row in processed}, processed  # Return a dictionary with VOD ID as the key and part number as value
+    return processed
 
-def save_processed_vod(vod_id, part_number):
+def save_processed_vod(vod_id, game_name, part_number):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PROCESSED_FILE, "a") as file:
         writer = csv.writer(file)
-        writer.writerow([vod_id, part_number, timestamp])
+        writer.writerow([vod_id, game_name, part_number, timestamp])
 
-def get_last_part_number_for_game(vod_title, processed_vods):
-    game_name = vod_title.split(" |")[0]  # Extract the game name before the pipe
-    game_vods = [vod for vod in processed_vods if vod[0].split(" |")[0] == game_name]  # Find processed VODs for the same game
-    if game_vods:
-        # Extract and return the highest part number used
-        part_numbers = [vod[1] for vod in game_vods]  # Use the part number from the processed list
-        return max(part_numbers, default=0)
-    return 0  # No parts processed for this game
+def get_last_part_number_for_game(game_name, processed_vods):
+    max_part_number = 0
+    for row in processed_vods:
+        if row[1].lower() == game_name.lower():
+            max_part_number = max(max_part_number, int(row[2]))
+    return max_part_number
 
 def sort_processed_vods():
     if os.path.exists(PROCESSED_FILE):
@@ -128,39 +126,45 @@ def upload_to_youtube(video_file, title, description):
 def main():
     print("Checking for new Twitch VODs...")
     latest_vods = fetch_vod_details()
-    processed_vod_ids, processed_vods = load_processed_vods()
+    processed_vods = load_processed_vods()
 
     for vod_id, vod_url, vod_title, vod_category in latest_vods:
-        if vod_id in processed_vod_ids:
+        # Check if VOD has been processed
+        if any(vod_id == row[0] for row in processed_vods):
             print(f"VOD {vod_id} already processed.")
             continue
 
         print(f"Downloading VOD: {vod_title} (Category: {vod_category})")
         vod_path = download_vod(vod_url, vod_id)
 
-        last_part_number = get_last_part_number_for_game(vod_title, processed_vods)
+        # Extract game name from the VOD title
+        game_name = vod_title.split(" |")[0]  # Get everything before the first " |"
 
-        # Check if the VOD is a cooking video
+        last_part_number = get_last_part_number_for_game(game_name, processed_vods)
+
+        # For cooking videos, treat them as "Just Chatting" and ensure correct part number
         if vod_title.lower().startswith("cooking |"):
-            vod_category = "just chatting"  # Treat as Just Chatting category for part number logic
+            vod_category = "just chatting"
 
+        # Handle Just Chatting and Cooking videos with incremented part numbers
         if vod_category.lower() == "just chatting" or vod_category.lower() == "cooking":
-            # Increment the part number for "just chatting" or "cooking" videos
-            print(f"Uploading VOD (Category: {vod_category}) with Part Number {last_part_number + 1}")
+            # Upload full VOD and increment the part number
+            part_number = last_part_number + 1
+            print(f"Uploading VOD (Category: {vod_category}) with Part Number {part_number}")
             upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
-            # Save the incremented part number after uploading
-            save_processed_vod(vod_id, last_part_number + 1)
+            save_processed_vod(vod_id, game_name, part_number)
         else:
+            # Split the VOD into segments and upload
             print("Splitting VOD into consistent-length segments...")
             segments = split_vod(vod_path)
             for i, segment in enumerate(segments):
-                part_number = last_part_number + i + 1  # Increment the part number for each segment
+                part_number = last_part_number + i + 1  # Increment part number for each segment
                 segment_title = f"{vod_title} - Part {part_number}"
                 description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
                 upload_to_youtube(segment, segment_title, description)
 
-            # Save the last part number used after uploading segments
-            save_processed_vod(vod_id, last_part_number + len(segments))
+            # Save the last part number after uploading all segments
+            save_processed_vod(vod_id, game_name, last_part_number + len(segments))
 
         print(f"VOD {vod_id} processed successfully!")
 
