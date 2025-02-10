@@ -25,6 +25,8 @@ TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 # YouTube API Config
 YOUTUBE_API_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 YOUTUBE_CLIENT_SECRET_FILE = os.getenv("YOUTUBE_CLIENT_SECRET_FILE")
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
+YOUTUBE_TOKEN_FILE = os.getenv("YOUTUBE_TOKEN_FILE")
 
 # Directory for video files
 DOWNLOAD_DIR = "./vods"
@@ -136,14 +138,29 @@ def get_video_duration(video_path):
     result = subprocess.run(["ffprobe", "-i", video_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"], capture_output=True, text=True)
     return float(result.stdout.strip())
 
-def upload_to_youtube(video_file, title, description):
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.errors import HttpError
-
+def authenticate_youtube():
     flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_API_SCOPES)
     credentials = flow.run_local_server(port=8080, prompt="consent")
     youtube = build("youtube", "v3", credentials=credentials)
 
+    # Verify authenticated channel
+    channel_id = get_authenticated_channel_id(youtube)
+    if channel_id != TARGET_CHANNEL_ID:
+        raise Exception(f"Authenticated with incorrect channel (ID: {channel_id}). Expected: {TARGET_CHANNEL_ID}")
+
+    print(f"Authenticated with correct YouTube channel: {channel_id}")
+    return youtube
+
+def get_authenticated_channel_id(youtube):
+    request = youtube.channels().list(
+        part="id",
+        mine=True
+    )
+    response = request.execute()
+    return response["items"][0]["id"] if "items" in response else None
+
+def upload_to_youtube(video_file, title, description):
+    youtube = authenticate_youtube()
     try:
         body = {
             "snippet": {
