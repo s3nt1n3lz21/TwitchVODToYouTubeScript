@@ -109,12 +109,12 @@ def fetch_vod_details(start_date="2025-02-10"):
     if start_date:
         start_date = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone("UTC"))
         videos = [
-            (video["id"], video["url"], video["title"], video["game_name"], video["created_at"])
+            (video["id"], video["url"], video["title"], video["created_at"])
             for video in videos if datetime.strptime(video["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone("UTC")) >= start_date
         ]
     else:
         videos = [
-            (video["id"], video["url"], video["title"], video["game_name"], video["created_at"])
+            (video["id"], video["url"], video["title"], video["created_at"])
             for video in videos
         ]
 
@@ -210,13 +210,13 @@ def main():
     latest_vods = fetch_vod_details()
     processed_vods = load_processed_vods()
 
-    for vod_id, vod_url, vod_title, vod_category in latest_vods:
+    for vod_id, vod_url, vod_title, _ in latest_vods:
         # Check if VOD has been processed
         if any(vod_id == row[0] for row in processed_vods):
             print(f"VOD {vod_id} already processed.")
             continue
 
-        print(f"Downloading VOD: {vod_title} (Category: {vod_category})")
+        print(f"Downloading VOD: {vod_title}")
         vod_path = download_vod(vod_url, vod_id)
 
         # Extract game name from the VOD title
@@ -224,15 +224,11 @@ def main():
 
         last_part_number = get_last_part_number_for_game(game_name, processed_vods)
 
-        # For cooking videos, treat them as "Just Chatting" and ensure correct part number
-        if vod_title.lower().startswith("cooking |"):
-            vod_category = "just chatting"
-
         # Handle Just Chatting and Cooking videos with incremented part numbers
-        if vod_category.lower() == "just chatting" or vod_category.lower() == "cooking":
+        if game_name.lower() == "just chatting" or game_name.lower() == "cooking":
             # Upload full VOD and increment the part number
             part_number = last_part_number + 1
-            print(f"Uploading VOD (Category: {vod_category}) with Part Number {part_number}")
+            print(f"Uploading VOD (game_name: {game_name}) with Part Number {part_number}")
             upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
             save_processed_vod(vod_id, game_name, part_number)
         else:
