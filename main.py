@@ -89,7 +89,7 @@ def refresh_access_token():
     else:
         print("Failed to refresh access token:", response.text)
 
-def fetch_vod_details():
+def fetch_vod_details(start_date="2025-02-10"):
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=100"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
@@ -104,7 +104,21 @@ def fetch_vod_details():
 
     response.raise_for_status()
     videos = response.json()["data"]
-    return [(video["id"], video["url"], video["title"], video["game_name"]) for video in videos]
+
+    # Filter VODs based on start_date
+    if start_date:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone("UTC"))
+        videos = [
+            (video["id"], video["url"], video["title"], video["game_name"], video["created_at"])
+            for video in videos if datetime.strptime(video["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone("UTC")) >= start_date
+        ]
+    else:
+        videos = [
+            (video["id"], video["url"], video["title"], video["game_name"], video["created_at"])
+            for video in videos
+        ]
+
+    return videos
 
 def download_vod(vod_url, vod_id):
     output_path = os.path.join(DOWNLOAD_DIR, f"{vod_id}.mp4")
