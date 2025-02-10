@@ -2,13 +2,14 @@ import os
 import requests
 import subprocess
 import time
+import csv
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from pytz import timezone
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 # Twitch API Config
@@ -18,23 +19,35 @@ TWITCH_USER_ID = os.getenv("TWITCH_USER_ID")
 
 # YouTube API Config
 YOUTUBE_API_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-YOUTUBE_CLIENT_SECRET_FILE = os.getenv("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
+YOUTUBE_CLIENT_SECRET_FILE = os.getenv("YOUTUBE_CLIENT_SECRET_FILE")
 
 # Directory for video files
 DOWNLOAD_DIR = "./vods"
 SEGMENTS_DIR = "./segments"
+PROCESSED_FILE = "processed_vods.csv"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(SEGMENTS_DIR, exist_ok=True)
 
+def load_processed_vods():
+    processed = set()
+    if os.path.exists(PROCESSED_FILE):
+        with open(PROCESSED_FILE, "r") as file:
+            reader = csv.reader(file)
+            for row in reader:
+                processed.add(row[0])
+    return processed
+
+def save_processed_vod(vod_id):
+    with open(PROCESSED_FILE, "a") as file:
+        writer = csv.writer(file)
+        writer.writerow([vod_id])
+
 def fetch_latest_vod():
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=1"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}",
-    }
+    headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"}
     response = requests.get(url, headers=headers)
     response.raise_for_status()
-    videos = response.json().get("data", [])
+    videos = response.json()["data"]
     if videos:
         latest_vod = videos[0]
         return latest_vod["id"], latest_vod["url"], latest_vod["title"]
@@ -60,11 +73,11 @@ def split_vod(vod_path):
 def upload_to_youtube(video_file, title, description):
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.errors import HttpError
-    
+
     flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_API_SCOPES)
     credentials = flow.run_local_server(port=8080, prompt="consent")
     youtube = build("youtube", "v3", credentials=credentials)
-    
+
     try:
         body = {
             "snippet": {
@@ -88,23 +101,25 @@ def main():
     if not vod_id:
         print("No new VODs found.")
         return
-    
-    if os.path.exists(os.path.join(DOWNLOAD_DIR, f"{vod_id}.mp4")):
+
+    processed_vods = load_processed_vods()
+    if vod_id in processed_vods:
         print(f"VOD {vod_id} already processed.")
         return
-    
+
     print(f"Downloading VOD: {vod_title}")
     vod_path = download_vod(vod_url, vod_id)
-    
+
     print("Splitting VOD into 30-minute segments...")
     segments = split_vod(vod_path)
-    
+
     print("Uploading segments to YouTube...")
     for i, segment in enumerate(segments):
         segment_title = f"{vod_title} - Part {i+1}"
         description = f"Segment {i+1} of Twitch VOD: {vod_title}. Exported automatically."
         upload_to_youtube(segment, segment_title, description)
-    
+
+    save_processed_vod(vod_id)
     print("All segments uploaded successfully!")
 
 if __name__ == "__main__":
