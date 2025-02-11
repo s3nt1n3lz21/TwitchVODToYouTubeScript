@@ -27,7 +27,10 @@ TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 
 # YouTube API Config
-YOUTUBE_API_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+YOUTUBE_API_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload", # For uploading videos
+    "https://www.googleapis.com/auth/youtube.force-ssl" # For adding videos to playlists
+]
 YOUTUBE_CLIENT_SECRET_FILE = os.getenv("YOUTUBE_CLIENT_SECRET_FILE")
 YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
 YOUTUBE_TOKEN_FILE = os.getenv("YOUTUBE_TOKEN_FILE")
@@ -176,9 +179,8 @@ def authenticate_youtube():
     print(f"Authenticated with YouTube")
     return youtube
 
-def upload_to_youtube(video_file, title, description):
+def upload_to_youtube(youtube, video_file, title, description):
     print(f"Starting upload: {title} to YouTube")
-    youtube = authenticate_youtube()
     try:
         body = {
             "snippet": {
@@ -203,8 +205,10 @@ def upload_to_youtube(video_file, title, description):
                 print(f"Upload progress: {progress}%")
         
         print(f"Upload complete! Video ID: {response['id']}")
+        return response
     except HttpError as e:
         print(f"An error occurred uploading to YouTube: {e}")
+        return None
 
 def is_user_live():
     url = f"https://api.twitch.tv/helix/streams?user_id={TWITCH_USER_ID}"
@@ -240,6 +244,53 @@ def clear_folders():
 
     print("Vods and segments folders cleared.")
 
+def get_playlist_id_by_name(youtube, playlist_name):
+    # List all playlists in the channel
+    request = youtube.playlists().list(
+        part="snippet",
+        channelId=YOUTUBE_CHANNEL_ID,
+        maxResults=50  # Adjust as needed
+    )
+    response = request.execute()
+
+    for playlist in response["items"]:
+        if playlist["snippet"]["title"].lower() == playlist_name.lower():
+            return playlist["id"]
+
+    # If no matching playlist found, create a new one
+    return create_playlist(youtube, playlist_name)
+
+def create_playlist(youtube, playlist_name):
+    print(f"Creating a new playlist for {playlist_name}...")
+    request = youtube.playlists().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "title": playlist_name,
+                "description": f"Playlist for VODs of {playlist_name}",
+            }
+        }
+    )
+    response = request.execute()
+    return response["id"]
+
+def add_video_to_playlist(youtube, video_id, playlist_id):
+    print(f"Adding video {video_id} to playlist {playlist_id}...")
+    request = youtube.playlistItems().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {
+                    "kind": "youtube#video",
+                    "videoId": video_id
+                }
+            }
+        }
+    )
+    request.execute()
+    print(f"Video {video_id} added to playlist {playlist_id}.")
+
 def main():
     print("Checking for new Twitch VODs...")
     
@@ -254,6 +305,8 @@ def main():
     print(f"Number of latest vods: {len(latest_vods)}")
     processed_vods = load_processed_vods()
     print(f"Number of processed vods: {len(processed_vods)}")
+
+    youtube = authenticate_youtube()
 
     for index, (vod_id, vod_url, vod_title, _) in enumerate(latest_vods):
         # Skip the first VOD if the user is live
@@ -288,7 +341,9 @@ def main():
                 # The description for the full VOD
                 description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
 
-                upload_to_youtube(vod_path, modified_title, description)
+                response = upload_to_youtube(youtube, vod_path, modified_title, description)
+                playlist_id = get_playlist_id_by_name(youtube, game_name)
+                add_video_to_playlist(youtube, response["id"], playlist_id)
                 save_processed_vod(vod_id, game_name, part_number)
             else:
                 # Split the VOD into segments and upload
@@ -303,7 +358,9 @@ def main():
                     # Segment-specific description
                     description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
 
-                    upload_to_youtube(segment, modified_title, description)
+                    response = upload_to_youtube(youtube, segment, modified_title, description)
+                    playlist_id = get_playlist_id_by_name(youtube, game_name)
+                    add_video_to_playlist(youtube, response["id"], playlist_id)
 
                 # Save the last part number after uploading all segments
                 save_processed_vod(vod_id, game_name, last_part_number + len(segments))
