@@ -40,6 +40,7 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(SEGMENTS_DIR, exist_ok=True)
 
 def load_processed_vods():
+    print("Loading list of processed vods from processed_vods.csv")
     processed = []
     if os.path.exists(PROCESSED_FILE):
         with open(PROCESSED_FILE, "r") as file:
@@ -60,16 +61,6 @@ def get_last_part_number_for_game(game_name, processed_vods):
         if row[1].lower() == game_name.lower():
             max_part_number = max(max_part_number, int(row[2]))
     return max_part_number
-
-def sort_processed_vods():
-    print('Sorting processed_vods.csv')
-    if os.path.exists(PROCESSED_FILE):
-        with open(PROCESSED_FILE, "r") as file:
-            reader = csv.reader(file)
-            sorted_vods = sorted(reader, key=lambda row: row[1], reverse=True)
-        with open(PROCESSED_FILE, "w") as file:
-            writer = csv.writer(file)
-            writer.writerows(sorted_vods)
 
 def refresh_access_token():
     global TWITCH_ACCESS_TOKEN
@@ -95,8 +86,8 @@ def refresh_access_token():
     else:
         print("Failed to refresh access token:", response.text)
 
-def fetch_vod_details(start_date="2025-02-10"):
-    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=2"
+def fetch_vod_details(start_date="2025-02-11"):
+    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
         "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
@@ -215,12 +206,44 @@ def upload_to_youtube(video_file, title, description):
     except HttpError as e:
         print(f"An error occurred uploading to YouTube: {e}")
 
+def is_user_live():
+    url = f"https://api.twitch.tv/helix/streams?user_id={TWITCH_USER_ID}"
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
+    }
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 401:  # Unauthorized, refresh token
+        refresh_access_token()
+        headers["Authorization"] = f"Bearer {TWITCH_ACCESS_TOKEN}"
+        response = requests.get(url, headers=headers)
+
+    response.raise_for_status()
+    stream_data = response.json()["data"]
+    return len(stream_data) > 0  # If there's any stream data, the user is live
+
 def main():
     print("Checking for new Twitch VODs...")
-    latest_vods = fetch_vod_details()
-    processed_vods = load_processed_vods()
+    
+    # Check if the user is live
+    if is_user_live():
+        print("User is currently live. Skipping the first VOD.")
+        skip_first_vod = True
+    else:
+        skip_first_vod = False
 
-    for vod_id, vod_url, vod_title, _ in [latest_vods[-1]]:
+    latest_vods = fetch_vod_details()
+    print(f"Number of latest vods: {len(latest_vods)}")
+    processed_vods = load_processed_vods()
+    print(f"Number of processed vods: {len(processed_vods)}")
+
+    for index, (vod_id, vod_url, vod_title, _) in enumerate(latest_vods):
+        # Skip the first VOD if the user is live
+        if skip_first_vod and index == 0:
+            print("Skipping the first VOD while the user is live.")
+            continue
+
         # Check if VOD has been processed
         if any(vod_id == row[0] for row in processed_vods):
             print(f"VOD {vod_id} already processed.")
@@ -261,8 +284,6 @@ def main():
         except Exception as e:
             print(f"Error processing VOD {vod_id} ({vod_title}): {e}")
             continue  # Skip to the next VOD in the list
-
-    sort_processed_vods()
 
 if __name__ == "__main__":
     try:
