@@ -285,7 +285,10 @@ def main():
                 # Add the part number after the first pipe
                 modified_title = f"{game_name} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
 
-                upload_to_youtube(vod_path, modified_title, f"Full Twitch VOD: {vod_title}")
+                # The description for the full VOD
+                description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
+
+                upload_to_youtube(vod_path, modified_title, description)
                 save_processed_vod(vod_id, game_name, part_number)
             else:
                 # Split the VOD into segments and upload
@@ -297,7 +300,9 @@ def main():
                     # Add the part number after the first pipe in the title
                     modified_title = f"{vod_title.split(' |', 1)[0]} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
 
-                    description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
+                    # Segment-specific description
+                    description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
+
                     upload_to_youtube(segment, modified_title, description)
 
                 # Save the last part number after uploading all segments
