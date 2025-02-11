@@ -375,7 +375,9 @@ def main():
     clear_folders()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"Error: {e}")
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print(f"Error: {e}")
+        time.sleep(3600)
