@@ -9,6 +9,10 @@ from pytz import timezone
 from datetime import datetime
 from dotenv import load_dotenv
 
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+
 # Load environment variables
 load_dotenv()
 
@@ -44,6 +48,7 @@ def load_processed_vods():
     return processed
 
 def save_processed_vod(vod_id, game_name, part_number):
+    print(f"Logging {vod_id} {game_name} part {part_number} to csv as successfully processed")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(PROCESSED_FILE, "a") as file:
         writer = csv.writer(file)
@@ -57,6 +62,7 @@ def get_last_part_number_for_game(game_name, processed_vods):
     return max_part_number
 
 def sort_processed_vods():
+    print('Sorting processed_vods.csv')
     if os.path.exists(PROCESSED_FILE):
         with open(PROCESSED_FILE, "r") as file:
             reader = csv.reader(file)
@@ -90,7 +96,7 @@ def refresh_access_token():
         print("Failed to refresh access token:", response.text)
 
 def fetch_vod_details(start_date="2025-02-10"):
-    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=100"
+    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=2"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
         "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
@@ -121,10 +127,11 @@ def fetch_vod_details(start_date="2025-02-10"):
     return videos
 
 def download_vod(vod_url, vod_id):
+    print(f"Downloading VOD: {vod_id}")
     output_path = os.path.join(DOWNLOAD_DIR, f"{vod_id}.mp4")
     subprocess.run(["streamlink", vod_url, "best", "-o", output_path])
+    print(f"Downloaded VOD: {vod_id}")
     return output_path
-
 
 def split_vod(vod_path):
     segments = []
@@ -138,6 +145,7 @@ def split_vod(vod_path):
     segment_duration = total_duration / max(1, num_segments)
 
     output_template = os.path.join(SEGMENTS_DIR, "segment_%03d.mp4")
+    print(f"Splitting vod at {vod_path} into {num_segments} parts of duration {segment_duration}")
     subprocess.run([
         "ffmpeg", "-i", vod_path, "-c", "copy", "-map", "0",
         "-segment_time", str(segment_duration), "-f", "segment", output_template
@@ -153,11 +161,12 @@ def get_video_duration(video_path):
     return float(result.stdout.strip())
 
 def authenticate_youtube():
+    print("Authenticating YouTube Credentials")
     credentials = None
 
     # Load existing credentials if available
-    if os.path.exists(TOKEN_FILE):
-        credentials = Credentials.from_authorized_user_file(TOKEN_FILE)
+    if os.path.exists(YOUTUBE_TOKEN_FILE):
+        credentials = Credentials.from_authorized_user_file(YOUTUBE_TOKEN_FILE)
 
     # If credentials are invalid or missing, perform authentication
     if not credentials or not credentials.valid:
@@ -168,25 +177,16 @@ def authenticate_youtube():
             credentials = flow.run_local_server(port=8080, prompt="consent")
 
             # Save credentials for future use
-            with open(TOKEN_FILE, "w") as token:
+            with open(YOUTUBE_TOKEN_FILE, "w") as token:
                 token.write(credentials.to_json())
 
     youtube = build("youtube", "v3", credentials=credentials)
 
-    # Verify authenticated channel
-    channel_id = get_authenticated_channel_id(youtube)
-    if channel_id != TARGET_CHANNEL_ID:
-        raise Exception(f"Authenticated with incorrect channel (ID: {channel_id}). Expected: {TARGET_CHANNEL_ID}")
-
-    print(f"Authenticated with correct YouTube channel: {channel_id}")
+    print(f"Authenticated with YouTube")
     return youtube
 
-def get_authenticated_channel_id(youtube):
-    request = youtube.channels().list(part="id", mine=True)
-    response = request.execute()
-    return response["items"][0]["id"] if "items" in response else None
-
 def upload_to_youtube(video_file, title, description):
+    print(f"Starting upload: {title} to YouTube")
     youtube = authenticate_youtube()
     try:
         body = {
@@ -198,53 +198,69 @@ def upload_to_youtube(video_file, title, description):
             },
             "status": {"privacyStatus": "public"},
         }
-        media = MediaFileUpload(video_file, chunksize=-1, resumable=True)
+        media = MediaFileUpload(video_file, chunksize=1024 * 1024, resumable=True)
         request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-        response = request.execute()
-        print(f"Uploaded: {video_file}, YouTube Video ID: {response['id']}")
+        
+        print(f"Uploading {video_file} in chunks...")
+
+        response = None
+        progress = 0
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                progress = int(status.progress() * 100)
+                print(f"Upload progress: {progress}%")
+        
+        print(f"Upload complete! Video ID: {response['id']}")
     except HttpError as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred uploading to YouTube: {e}")
 
 def main():
     print("Checking for new Twitch VODs...")
     latest_vods = fetch_vod_details()
     processed_vods = load_processed_vods()
 
-    for vod_id, vod_url, vod_title, _ in latest_vods:
+    for vod_id, vod_url, vod_title, _ in [latest_vods[-1]]:
         # Check if VOD has been processed
         if any(vod_id == row[0] for row in processed_vods):
             print(f"VOD {vod_id} already processed.")
             continue
 
-        print(f"Downloading VOD: {vod_title}")
-        vod_path = download_vod(vod_url, vod_id)
+        try:
+            print(f"Downloading VOD: {vod_title}")
+            vod_path = download_vod(vod_url, vod_id)
 
-        # Extract game name from the VOD title
-        game_name = vod_title.split(" |")[0]  # Get everything before the first " |"
+            # Extract game name from the VOD title
+            print(f"Extracting game name")
+            game_name = vod_title.split(" |")[0]  # Get everything before the first " |"
 
-        last_part_number = get_last_part_number_for_game(game_name, processed_vods)
+            last_part_number = get_last_part_number_for_game(game_name, processed_vods)
 
-        # Handle Just Chatting and Cooking videos with incremented part numbers
-        if game_name.lower() == "just chatting" or game_name.lower() == "cooking":
-            # Upload full VOD and increment the part number
-            part_number = last_part_number + 1
-            print(f"Uploading VOD (game_name: {game_name}) with Part Number {part_number}")
-            upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
-            save_processed_vod(vod_id, game_name, part_number)
-        else:
-            # Split the VOD into segments and upload
-            print("Splitting VOD into consistent-length segments...")
-            segments = split_vod(vod_path)
-            for i, segment in enumerate(segments):
-                part_number = last_part_number + i + 1  # Increment part number for each segment
-                segment_title = f"{vod_title} - Part {part_number}"
-                description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
-                upload_to_youtube(segment, segment_title, description)
+            # Handle Just Chatting and Cooking videos with incremented part numbers
+            if game_name.lower() == "just chatting" or game_name.lower() == "cooking":
+                # Upload full VOD and increment the part number
+                part_number = last_part_number + 1
+                print(f"Uploading VOD (game_name: {game_name}) with Part Number {part_number}")
+                upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
+                save_processed_vod(vod_id, game_name, part_number)
+            else:
+                # Split the VOD into segments and upload
+                print("Splitting VOD into consistent-length segments...")
+                segments = split_vod(vod_path)
+                for i, segment in enumerate(segments):
+                    part_number = last_part_number + i + 1  # Increment part number for each segment
+                    segment_title = f"{vod_title} - Part {part_number}"
+                    description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
+                    upload_to_youtube(segment, segment_title, description)
 
-            # Save the last part number after uploading all segments
-            save_processed_vod(vod_id, game_name, last_part_number + len(segments))
+                # Save the last part number after uploading all segments
+                save_processed_vod(vod_id, game_name, last_part_number + len(segments))
 
-        print(f"VOD {vod_id} processed successfully!")
+            print(f"VOD {vod_id} processed successfully!")
+
+        except Exception as e:
+            print(f"Error processing VOD {vod_id} ({vod_title}): {e}")
+            continue  # Skip to the next VOD in the list
 
     sort_processed_vods()
 
