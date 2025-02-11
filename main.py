@@ -264,7 +264,11 @@ def main():
                 # Upload full VOD and increment the part number
                 part_number = last_part_number + 1
                 print(f"Uploading VOD (game_name: {game_name}) with Part Number {part_number}")
-                upload_to_youtube(vod_path, vod_title, f"Full Twitch VOD: {vod_title}")
+
+                # Add the part number after the first pipe
+                modified_title = f"{game_name} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
+
+                upload_to_youtube(vod_path, modified_title, f"Full Twitch VOD: {vod_title}")
                 save_processed_vod(vod_id, game_name, part_number)
             else:
                 # Split the VOD into segments and upload
@@ -272,9 +276,12 @@ def main():
                 segments = split_vod(vod_path)
                 for i, segment in enumerate(segments):
                     part_number = last_part_number + i + 1  # Increment part number for each segment
-                    segment_title = f"{vod_title} - Part {part_number}"
+                    
+                    # Add the part number after the first pipe in the title
+                    modified_title = f"{vod_title.split(' |', 1)[0]} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
+
                     description = f"Segment {part_number} of Twitch VOD: {vod_title}. Exported automatically."
-                    upload_to_youtube(segment, segment_title, description)
+                    upload_to_youtube(segment, modified_title, description)
 
                 # Save the last part number after uploading all segments
                 save_processed_vod(vod_id, game_name, last_part_number + len(segments))
