@@ -223,6 +223,23 @@ def is_user_live():
     stream_data = response.json()["data"]
     return len(stream_data) > 0  # If there's any stream data, the user is live
 
+# Function to clear the vods and segments folder
+def clear_folders():
+    print("Clearing the vods and segments folders of downloaded and processed vods")
+    # Clear the vods folder
+    for file in os.listdir(DOWNLOAD_DIR):
+        file_path = os.path.join(DOWNLOAD_DIR, file)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    
+    # Clear the segments folder
+    for file in os.listdir(SEGMENTS_DIR):
+        file_path = os.path.join(SEGMENTS_DIR, file)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
+    print("Vods and segments folders cleared.")
+
 def main():
     print("Checking for new Twitch VODs...")
     
@@ -291,6 +308,9 @@ def main():
         except Exception as e:
             print(f"Error processing VOD {vod_id} ({vod_title}): {e}")
             continue  # Skip to the next VOD in the list
+    
+    # Clear the folders after processing all VODs
+    clear_folders()
 
 if __name__ == "__main__":
     try:
