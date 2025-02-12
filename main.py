@@ -64,6 +64,7 @@ def get_last_part_number_for_game(game_name, processed_vods):
     for row in processed_vods:
         if row[1].lower() == game_name.lower():
             max_part_number = max(max_part_number, int(row[2]))
+    print(f"Most recent part number is {max_part_number}")
     return max_part_number
 
 def refresh_access_token():
@@ -246,6 +247,8 @@ def clear_folders():
     print("Vods and segments folders cleared.")
 
 def get_playlist_id_by_name(youtube, playlist_name):
+    print(f"Retrieving playlist {playlist_name}")
+    
     # List all playlists in the channel
     request = youtube.playlists().list(
         part="snippet",
@@ -256,10 +259,14 @@ def get_playlist_id_by_name(youtube, playlist_name):
 
     for playlist in response["items"]:
         if playlist["snippet"]["title"].lower() == playlist_name.lower():
-            return playlist["id"]
+            playlist_id = playlist["id"]
+            print(f"Found playlist ID: {playlist_id}")
+            return playlist_id
 
     # If no matching playlist found, create a new one
-    return create_playlist(youtube, playlist_name)
+    new_playlist_id = create_playlist(youtube, playlist_name)
+    print(f"Created new playlist with ID: {new_playlist_id}")
+    return new_playlist_id
 
 def create_playlist(youtube, playlist_name):
     print(f"Creating a new playlist for {playlist_name}...")
@@ -273,6 +280,7 @@ def create_playlist(youtube, playlist_name):
         }
     )
     response = request.execute()
+    print(f"Playlist {playlist_name} created")
     return response["id"]
 
 def add_video_to_playlist(youtube, video_id, playlist_id):
