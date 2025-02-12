@@ -317,6 +317,8 @@ def main():
 
     youtube = authenticate_youtube()
 
+    errors = False
+
     for index, (vod_id, vod_url, vod_title, _) in enumerate(latest_vods):
         # Skip the first VOD if the user is live
         if skip_first_vod and index == 0:
@@ -378,10 +380,11 @@ def main():
 
         except Exception as e:
             print(f"Error processing VOD {vod_id} ({vod_title}): {e}")
+            errors = True
             continue  # Skip to the next VOD in the list
     
-    # Clear the folders after processing all VODs
-    clear_folders()
+    if errors == False:
+        clear_folders()
     print("All vods processed!")
 
 if __name__ == "__main__":
