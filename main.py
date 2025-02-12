@@ -382,6 +382,7 @@ def main():
     
     # Clear the folders after processing all VODs
     clear_folders()
+    print("All vods processed!")
 
 if __name__ == "__main__":
     while True:
@@ -389,4 +390,5 @@ if __name__ == "__main__":
             main()
         except Exception as e:
             print(f"Error: {e}")
+        print("Checking again in 1 hour...")
         time.sleep(3600)
