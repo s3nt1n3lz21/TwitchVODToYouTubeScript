@@ -8,6 +8,7 @@ from googleapiclient.http import MediaFileUpload
 from pytz import timezone
 from datetime import datetime
 from dotenv import load_dotenv
+from urllib.error import HTTPError
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -185,6 +186,13 @@ def authenticate_youtube():
 
 def upload_to_youtube(youtube, video_file, title, description):
     print(f"Starting upload: {title} to YouTube")
+
+    MAX_TITLE_LENGTH = 100
+
+    if len(title) > MAX_TITLE_LENGTH:
+        print(f"Error: Title is too long ({len(title)} characters). Trimming it.")
+        title = title[:MAX_TITLE_LENGTH]
+
     try:
         body = {
             "snippet": {
@@ -210,7 +218,7 @@ def upload_to_youtube(youtube, video_file, title, description):
         
         print(f"Upload complete! Video ID: {response['id']}")
         return response
-    except HttpError as e:
+    except HTTPError as e:
         print(f"An error occurred uploading to YouTube: {e}")
         return None
 
@@ -352,7 +360,7 @@ def main():
                 modified_title = f"{game_name} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
 
                 # The description for the full VOD
-                description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
+                description = f"{modified_title} Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
 
                 response = upload_to_youtube(youtube, vod_path, modified_title, description)
                 save_processed_vod(vod_id, game_name, part_number)
@@ -369,7 +377,7 @@ def main():
                     modified_title = f"{vod_title.split(' |', 1)[0]} | Part {part_number} | {vod_title.split(' |', 1)[1]}"
 
                     # Segment-specific description
-                    description = f"Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
+                    description = f"{modified_title} Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
 
                     response = upload_to_youtube(youtube, segment, modified_title, description)
                     playlist_id = get_playlist_id_by_name(youtube, game_name)
