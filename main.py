@@ -130,6 +130,7 @@ def download_vod(vod_url, vod_id):
     return output_path
 
 def split_vod(vod_path):
+    print('Splitting vod')
     segments = []
     total_duration = get_video_duration(vod_path)
     
@@ -141,7 +142,7 @@ def split_vod(vod_path):
     segment_duration = total_duration / max(1, num_segments)
 
     output_template = os.path.join(SEGMENTS_DIR, "segment_%03d.mp4")
-    print(f"Splitting vod at {vod_path} into {num_segments} parts of duration {segment_duration}")
+    print(f"Splitting vod at {vod_path} into {num_segments} parts of duration {segment_duration/60} minutes")
     subprocess.run([
         "ffmpeg", "-i", vod_path, "-c", "copy", "-map", "0",
         "-segment_time", str(segment_duration), "-f", "segment", output_template
@@ -153,6 +154,7 @@ def split_vod(vod_path):
     return segments
 
 def get_video_duration(video_path):
+    print('Getting video duration')
     result = subprocess.run(["ffprobe", "-i", video_path, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"], capture_output=True, text=True)
     return float(result.stdout.strip())
 
