@@ -92,7 +92,7 @@ def refresh_access_token():
     else:
         print("Failed to refresh access token:", response.text)
 
-def fetch_vod_details(start_date="2025-02-13"):
+def fetch_vod_details(start_date="2025-02-14"):
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
@@ -364,8 +364,11 @@ def main():
 
                 response = upload_to_youtube(youtube, vod_path, modified_title, description)
                 save_processed_vod(vod_id, game_name, part_number)
-                playlist_id = get_playlist_id_by_name(youtube, game_name)
-                add_video_to_playlist(youtube, response["id"], playlist_id)
+                try:
+                    playlist_id = get_playlist_id_by_name(youtube, game_name)
+                    add_video_to_playlist(youtube, response["id"], playlist_id)
+                except Exception as e:
+                    print(f"Error Adding VOD {modified_title} to playlist: {e}")
             else:
                 # Split the VOD into segments and upload
                 print("Splitting VOD into consistent-length segments...")
@@ -380,8 +383,12 @@ def main():
                     description = f"{modified_title} Part {part_number} of Twitch VOD: {game_name}. Broadcasted live on Twitch -- Watch live at https://www.twitch.tv/watcherneil. Uploaded automatically"
 
                     response = upload_to_youtube(youtube, segment, modified_title, description)
-                    playlist_id = get_playlist_id_by_name(youtube, game_name)
-                    add_video_to_playlist(youtube, response["id"], playlist_id)
+                    try:
+                        playlist_id = get_playlist_id_by_name(youtube, game_name)
+                        add_video_to_playlist(youtube, response["id"], playlist_id)
+                    except Exception as e:
+                        print(f"Error Adding VOD {modified_title} to playlist: {e}")
+
 
                 # Save the last part number after uploading all segments
                 save_processed_vod(vod_id, game_name, last_part_number + len(segments))
