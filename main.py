@@ -92,7 +92,7 @@ def refresh_access_token():
     else:
         print("Failed to refresh access token:", response.text)
 
-def fetch_vod_details(start_date="2025-02-15"):
+def fetch_vod_details(start_date="2025-02-15", title_filter=None):
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
@@ -115,11 +115,10 @@ def fetch_vod_details(start_date="2025-02-15"):
             (video["id"], video["url"], video["title"], video["created_at"])
             for video in videos if datetime.strptime(video["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone("UTC")) >= start_date
         ]
-    else:
-        videos = [
-            (video["id"], video["url"], video["title"], video["created_at"])
-            for video in videos
-        ]
+
+    # Filter VODs based on title
+    if title_filter:
+        videos = [video for video in videos if title_filter.lower() in video[2].lower()]
 
     return videos
 
