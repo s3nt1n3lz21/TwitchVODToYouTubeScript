@@ -131,7 +131,7 @@ def download_vod(vod_url, vod_id):
     return output_path
 
 def split_vod(vod_path):
-    print('Splitting vod')
+    print('Splitting VOD...')
     segments = []
     total_duration = get_video_duration(vod_path)
     
@@ -141,14 +141,20 @@ def split_vod(vod_path):
     
     # Ensure a reasonable segment length based on the total duration
     segment_duration = total_duration / max(1, num_segments)
-
     output_template = os.path.join(SEGMENTS_DIR, "segment_%03d.mp4")
-    print(f"Splitting vod at {vod_path} into {num_segments} parts of duration {segment_duration/60} minutes")
+
+    print(f"Splitting VOD at {vod_path} into {num_segments} parts of duration {segment_duration / 60:.2f} minutes")
+
     subprocess.run([
         "ffmpeg", "-i", vod_path, "-c", "copy", "-map", "0",
-        "-segment_time", str(segment_duration), "-f", "segment", output_template
-    ])
-    for file in os.listdir(SEGMENTS_DIR):
+        "-f", "segment",
+        "-segment_time", str(segment_duration),
+        "-reset_timestamps", "1",
+        "-segment_format", "mp4",
+        output_template
+    ], check=True)
+
+    for file in sorted(os.listdir(SEGMENTS_DIR)):
         if file.startswith("segment_") and file.endswith(".mp4"):
             segments.append(os.path.join(SEGMENTS_DIR, file))
     
