@@ -92,7 +92,7 @@ def refresh_access_token():
     else:
         print("Failed to refresh access token:", response.text)
 
-def fetch_vod_details(start_date="2025-02-14"):
+def fetch_vod_details(start_date="2025-02-15"):
     url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
