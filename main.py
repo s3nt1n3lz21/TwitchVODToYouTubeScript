@@ -360,12 +360,13 @@ def main():
             continue
 
         # Check if VOD has been processed
+        print(f"Checking VOD {vod_id} has already been processed...")
         if any(vod_id == row[0] for row in processed_vods):
             print(f"VOD {vod_id} already processed.")
             continue
 
         try:
-            print(f"Downloading VOD: {vod_title}")
+            print(f"Downloading VOD {vod_id} with title: {vod_title}")
             vod_path = download_vod(vod_url, vod_id)
 
             # Extract game name from the VOD title
@@ -425,7 +426,8 @@ def main():
             continue  # Skip to the next VOD in the list
     
     if errors == False:
-        clear_folders()
+        print("No errors found")
+        # clear_folders()
     print("All vods processed!")
 
 if __name__ == "__main__":
