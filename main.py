@@ -93,7 +93,7 @@ def refresh_access_token():
         print("Failed to refresh access token:", response.text)
 
 def fetch_vod_details(start_date="2025-02-15", title_filter=None):
-    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=10"
+    url = f"https://api.twitch.tv/helix/videos?user_id={TWITCH_USER_ID}&first=100"
     headers = {
         "Client-ID": TWITCH_CLIENT_ID,
         "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
@@ -170,22 +170,41 @@ def authenticate_youtube():
 
     # Load existing credentials if available
     if os.path.exists(YOUTUBE_TOKEN_FILE):
-        credentials = Credentials.from_authorized_user_file(YOUTUBE_TOKEN_FILE)
+        try:
+            credentials = Credentials.from_authorized_user_file(YOUTUBE_TOKEN_FILE)
+        except Exception as e:
+            print(f"Error loading credentials: {e}")
+            credentials = None  # Force re-authentication
 
     # If credentials are invalid or missing, perform authentication
     if not credentials or not credentials.valid:
+        print('YouTube credentials invalid or missing')
         if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())  # Refresh token if expired
-        else:
+            print('Refreshing YouTube access token...')
+            try:
+                credentials.refresh(Request())  # Refresh token if expired
+                print('YouTube access token refreshed successfully')
+
+                # Save updated credentials
+                with open(YOUTUBE_TOKEN_FILE, "w") as token:
+                    token.write(credentials.to_json())
+
+            except Exception as e:
+                print(f"Error refreshing token: {e}")
+                print("Re-authenticating from scratch...")
+                credentials = None  # Force re-authentication
+
+        if not credentials:  # If refresh failed, request new authentication
+            print('Retrieving new YouTube credentials and refresh token')
             flow = InstalledAppFlow.from_client_secrets_file(YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_API_SCOPES)
             credentials = flow.run_local_server(port=8080, prompt="consent")
 
             # Save credentials for future use
+            print(f'Saving YouTube credentials to file {YOUTUBE_TOKEN_FILE}')
             with open(YOUTUBE_TOKEN_FILE, "w") as token:
                 token.write(credentials.to_json())
 
     youtube = build("youtube", "v3", credentials=credentials)
-
     print(f"Authenticated with YouTube")
     return youtube
 
@@ -325,7 +344,7 @@ def main():
     else:
         skip_first_vod = False
 
-    latest_vods = fetch_vod_details()
+    latest_vods = fetch_vod_details("2025-02-01", "Avowed | Part 1 | Path Of The Damned | Early Access")
     print(f"Number of latest vods: {len(latest_vods)}")
     processed_vods = load_processed_vods()
     print(f"Number of processed vods: {len(processed_vods)}")
